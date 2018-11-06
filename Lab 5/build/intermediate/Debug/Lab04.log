@@ -1,0 +1,5 @@
+﻿  main.cpp
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(495): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(621): warning C4018: '<': signed/unsigned mismatch
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(648): warning C4060: switch statement contains no 'case' or 'default' labels
+  Lab04.vcxproj -> C:\Users\andrew\Documents\CS4052\201819\Lab 5\\build\executables\Debug\Lab 04.exe

@@ -1,0 +1,18 @@
+// from learnopengl tutorial
+
+#version 330
+in vec3 skybox;
+
+out vec3 TexCoords;
+
+uniform mat4 projection;
+uniform mat4 view;
+
+void main()
+{
+    TexCoords = skybox;
+    vec4 pos = projection * view * vec4(skybox, 1.0);
+
+    // trick the gpu into believing the skybox lives all the time at z = 1.0 
+    gl_Position = pos.xyww;
+}  
