@@ -57,6 +57,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(SolutionDir)\libs\assimp\include;$(SolutionDir)\libs\glew-1.10.0\include;$(SolutionDir)\libs\freeglut\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(SolutionDir)\libs\assimp\lib\Debug;$(SolutionDir)\libs\glew-1.10.0\lib\Release\Win32;$(SolutionDir)\libs\freeglut\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>

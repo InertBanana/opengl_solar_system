@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <iostream>
+#include <omp.h>
 #include <string>
 #include <stdio.h>
 #include <math.h>
@@ -28,6 +29,16 @@ MESH TO LOAD
 // this mesh is a dae file format but you should be able to use any other format too, obj is typically what is used
 // put the mesh in your project directory, or provide a filepath for it here
 #define MESH_NAME "models/sphere.dae"
+#define ASTEROID_MESH "models/sphere.dae"
+#define NUM_TEXTURES 10
+
+#define INDEX_BUFFER 0
+#define POSITION_LOCATION 1
+#define TEX_COORD_LOCATION 2
+#define NORMAL_LOCATION 3
+#define INSTANCE_MAT_LOCATION 4
+
+#define NUM_ASTEROIDS 1000
 /*----------------------------------------------------------------------------
 ----------------------------------------------------------------------------*/
 
@@ -39,55 +50,101 @@ typedef struct
 	std::vector<vec3> mNormals;
 	std::vector<vec2> mTextureCoords;
 } ModelData;
+
+typedef struct
+{
+	const char * name;
+	bool is_visible;
+	GLfloat orbit_radius;
+	GLfloat orbit_vel;
+	GLfloat orbit_pos;
+	GLfloat radius;
+	GLfloat rotation_speed;
+	GLfloat rotation_pos;
+} planet;
+
 #pragma endregion SimpleTypes
 
 using namespace std;
-GLuint shaderProgramID, skybox_shader_program_ID;
+GLuint shaderProgramID, skybox_shader_program_ID, asteroid_shader_program_ID;
 
-ModelData mesh_data;
+ModelData mesh_data, asteroid_data;
 unsigned int mesh_vao = 0;
 unsigned int vao = 0;
 unsigned int skybox_vao = 0;
+unsigned int vp_vbo = 0;
+unsigned int asteroid_vao = 0;
+
+GLuint asteroid_buffers[5];
+std::vector<unsigned int> Indices;
+
 int width = 800;
 int height = 600;
 
+planet planets[9];
+
+const int font = (int)GLUT_BITMAP_TIMES_ROMAN_10;
+
 GLuint loc1, loc2, loc3, loc4;
+unsigned int rt_vbo;
+unsigned int instance_mat_buffer;
+
 
 GLfloat dX = 0.0f;
 GLfloat dY = 0.0f;
 GLfloat rotatez = 0.0f;
 
-std::vector<unsigned int> textures;
-std::vector<unsigned int> skyboxes;
+vec3 cam_pos = vec3(1.0f, 4.0f, 20.0f);
+vec3 target_pos = vec3(0.0f, 0.5f, 0.0f);
 
+// TODO: Generalise calculation of 'up' vector for movement of camera
+vec3 up = vec3(0.0f, 1.0f, 0.0f);
+
+mat4 asteroid_model_matrices[NUM_ASTEROIDS];// = (mat4 *)(malloc(sizeof(mat4) * NUM_ASTEROIDS));
+
+
+char * locs[NUM_TEXTURES] = {
+	"textures/sun.jpg",
+	"textures/planets/mercury.jpg",
+	"textures/planets/venus.jpg",
+	"textures/planets/earth.jpg",
+	"textures/planets/mars.jpg",
+	"textures/planets/jupiter.jpg",
+	"textures/planets/saturn.jpg",
+	"textures/planets/uranus.jpg",
+	"textures/planets/neptune.jpg",
+	"textures/planets/pluto.jpg"
+};
+
+unsigned int textures[NUM_TEXTURES];
+std::vector<unsigned int> skyboxes;
+#pragma region body_data
+GLfloat earth_orbit_vel = 1.0f;
 // inaccurate, but the inner planets are difficult to discern due to their size
-vec3 planet_orbit_radius[9] = {
-	vec3(2.0f, 0.0f, 0.0f),
-	vec3(3.0f, 0.0f, 0.0f),
-	vec3(4.0f, 0.0f, 0.0f),
-	vec3(5.0f, 0.0f, 0.0f),
-	vec3(6.5f, 0.0f, 0.0f),
-	vec3(8.0f, 0.0f, 0.0f),
-	vec3(9.5f, 0.0f, 0.0f),
-	vec3(10.4f, 0.0f, 0.0f),
-	vec3(12.0f, 0.0f, 0.0f)
+
+// hold on to planet local matrices
+mat4 planet_local[9] = { 
+	identity_mat4(), 
+	identity_mat4(),
+	identity_mat4(),
+	identity_mat4(),
+	identity_mat4(),
+	identity_mat4(),
+	identity_mat4(),
+	identity_mat4(),
+	identity_mat4(),
 };
 
 // inaccurate, but they're imperceptible on their true scale (relative to size of sun)
-vec3 planet_radius[9] = {
-	vec3(0.08f, 0.08f, 0.08f),
-	vec3(0.18f, 0.18f, 0.18f),
-	vec3(0.2f, 0.2f, 0.2f),
-	vec3(0.1f, 0.1f, 0.1f),
-	vec3(0.5f, 0.5f, 0.5f),
-	vec3(0.45f, 0.45f, 0.45f),
-	vec3(0.35f, 0.35f, 0.35f),
-	vec3(0.32f, 0.32f, 0.32f),
-	vec3(0.06f, 0.06f, 0.06f)
+const char * planet_names[9] = {
+	"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto",
 };
-
-GLfloat earth_orbit_vel = 1.0f;
-
+const GLfloat planet_orbit_radius[9] = {
+	2.0f, 3.0f, 4.0f, 4.5f, 8.0f, 9.0f, 10.5f, 11.4f, 12.0f
+};
+const GLfloat planet_radius[9] = {
+	0.08f, 0.18f, 0.2f, 0.1f, 0.5f, 0.45f, 0.35f, 0.32f, 0.06f
+};
 const GLfloat planet_orbit_vel[9] = {
 	earth_orbit_vel * 1.7f,
 	earth_orbit_vel * 1.25f,
@@ -99,7 +156,6 @@ const GLfloat planet_orbit_vel[9] = {
 	earth_orbit_vel * 0.26f,
 	earth_orbit_vel * 0.18f
 };
-
 GLfloat planet_orbital_pos[9] = {
 	0.0f,
 	0.0f,
@@ -111,8 +167,6 @@ GLfloat planet_orbital_pos[9] = {
 	0.0f,
 	0.0f
 };
-
-
 const GLfloat planet_rotation_vel[9] = {
 	earth_orbit_vel * 0.016f,
 	earth_orbit_vel * -0.004f,
@@ -124,7 +178,6 @@ const GLfloat planet_rotation_vel[9] = {
 	earth_orbit_vel * 1.54f,
 	earth_orbit_vel * 0.16f
 };
-
 GLfloat planet_rotation_pos[9] = {
 	0.0f,
 	0.0f,
@@ -136,6 +189,8 @@ GLfloat planet_rotation_pos[9] = {
 	0.0f,
 	0.0f
 };
+
+#pragma endregion
 #pragma region skybox
 
 std::vector<char*> blue_skybox_locations = {
@@ -230,7 +285,6 @@ float skybox_vertices[] = {
 
 #pragma endregion
 
-
 #pragma region MESH LOADING
 /*----------------------------------------------------------------------------
 MESH LOADING FUNCTION
@@ -295,7 +349,6 @@ ModelData load_mesh(const char* file_name) {
 
 #pragma endregion MESH LOADING
 
-// Shader Functions- click on + to expand
 #pragma region SHADER_FUNCTIONS
 char* readShaderSource(const char* shaderFile) {
 	FILE* fp;
@@ -399,9 +452,61 @@ GLuint CompileShaders(char * vs_path, char * fs_path)
 	return temp_shader_program_ID;
 }
 #pragma endregion SHADER_FUNCTIONS
-
-// VBO Functions - click on + to expand
+	
 #pragma region VBO_FUNCTIONS
+void generate_instance_buffer_mesh() {
+
+	asteroid_data = load_mesh(ASTEROID_MESH);
+
+	Indices.reserve(asteroid_data.mPointCount);
+
+	for (int i = 0; i < asteroid_data.mPointCount; i++) {
+		Indices.push_back(i);
+	}
+	glUseProgram(asteroid_shader_program_ID);
+	// bind asteroid's VAO 
+	glBindVertexArray(asteroid_vao);
+
+	// gen buffers for vertex position, vertex texture, vertex normal and instance matrix at once
+	glGenBuffers( ( sizeof(asteroid_buffers) / sizeof(asteroid_buffers[0]) ), asteroid_buffers);
+
+	// Vertex Positions
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[POSITION_LOCATION]);
+	glBufferData(GL_ARRAY_BUFFER, asteroid_data.mPointCount * sizeof(vec3), &asteroid_data.mVertices[0], GL_STATIC_DRAW);
+	glEnableVertexAttribArray(POSITION_LOCATION);
+	glVertexAttribPointer(POSITION_LOCATION, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	// Vertex Textures
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[TEX_COORD_LOCATION]);
+	glBufferData(GL_ARRAY_BUFFER, asteroid_data.mPointCount * sizeof(vec2), &asteroid_data.mTextureCoords, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(TEX_COORD_LOCATION);
+	glVertexAttribPointer(TEX_COORD_LOCATION, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+	// Vertex Normals
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[NORMAL_LOCATION]);
+	glBufferData(GL_ARRAY_BUFFER, asteroid_data.mPointCount * sizeof(vec3), &asteroid_data.mNormals, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(NORMAL_LOCATION);
+	glVertexAttribPointer(NORMAL_LOCATION, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, asteroid_buffers[INDEX_BUFFER]);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Indices[0]) * Indices.size(), &Indices[0], GL_STATIC_DRAW);
+
+	// Instance Matrix - DYNAMIC DRAW AS THEY ARE SUBJECT TO CHANGE
+	// matrix buffer bound dynamically in the display function
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[INSTANCE_MAT_LOCATION]);
+
+	// need to split matrix into 4 vec4s as an attrib pointer can only point at 4 floats at a time, it can't point at a matrix
+	for (int i = 0; i < 4; i++) {
+		glEnableVertexAttribArray(INSTANCE_MAT_LOCATION + i);
+		// pointer increments by 4 * sizeof(GLfloat) each time to correctly index the next 4 GLfloats in the vector 
+		glVertexAttribPointer(INSTANCE_MAT_LOCATION + i, 4, GL_FLOAT, GL_FALSE, sizeof(mat4), (const GLvoid *)(sizeof(GLfloat) * i * 4));
+		// tell opengl that this particular thingy is instanced
+		glVertexAttribDivisor(INSTANCE_MAT_LOCATION + i, 1);
+	}
+
+	// unbind VAO
+	glBindVertexArray(0);
+} 
 void generateObjectBufferMesh() {
 	/*----------------------------------------------------------------------------
 	LOAD MESH HERE AND COPY INTO BUFFERS
@@ -409,16 +514,17 @@ void generateObjectBufferMesh() {
 
 	//Note: you may get an error "vector subscript out of range" if you are using this code for a mesh that doesnt have positions and normals
 	//Might be an idea to do a check for that before generating and binding the buffer.
-	
+
+#pragma region object_buffers
+
 	// make sure that initially using the 'object' shader!
 	glUseProgram(shaderProgramID);
 	
 	mesh_data = load_mesh(MESH_NAME);
 	loc1 = glGetAttribLocation(shaderProgramID, "vertex_position");
 	loc2 = glGetAttribLocation(shaderProgramID, "vertex_normal");
-	loc3 = glGetAttribLocation(shaderProgramID, "vertex_texture");
+	//loc3 = glGetAttribLocation(shaderProgramID, "vertex_texture");
 
-	unsigned int vp_vbo = 0;
 	glGenBuffers(1, &vp_vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vp_vbo);
 	glBufferData(GL_ARRAY_BUFFER, mesh_data.mPointCount * sizeof(vec3), &mesh_data.mVertices[0], GL_STATIC_DRAW);
@@ -443,11 +549,14 @@ void generateObjectBufferMesh() {
 	glBindBuffer(GL_ARRAY_BUFFER, vn_vbo);
 	glVertexAttribPointer(loc2, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 
-	glEnableVertexAttribArray (loc3);
+	glEnableVertexAttribArray (12);
 	glBindBuffer(GL_ARRAY_BUFFER, vt_vbo);
-	glVertexAttribPointer (loc3, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+	glVertexAttribPointer (12, 2, GL_FLOAT, GL_FALSE, 0, NULL);
 
-	// for generating skybox stuff, use the skybox shaders
+#pragma endregion
+
+#pragma region skybox_buffers
+
 	glUseProgram(skybox_shader_program_ID);
 
 	glGenVertexArrays(1, &skybox_vao);
@@ -463,94 +572,183 @@ void generateObjectBufferMesh() {
 	glEnableVertexAttribArray(loc4);
 	glBindBuffer(GL_ARRAY_BUFFER, skybox_vbo);
 	glVertexAttribPointer(loc4, 3, GL_FLOAT, GL_FALSE, 0, NULL);
-
+	
 	// switch back to 'object' shader program. TODO: possible redundant step
 	glUseProgram(shaderProgramID);
-
+#pragma endregion
 }
 #pragma endregion VBO_FUNCTIONS
 
+void init_asteroid_matrices() {
+	// embarrassingly parallel 
+#pragma omp parallel for
+	for (int i = 0; i < NUM_ASTEROIDS; i++) {
+		mat4 temp_model = identity_mat4();
+		float asteroid_scale_factor = planets[0].radius * 0.4f;
+		float radius = 185.0f;
 
+		// asteroids size 2x mercury (for now)
+		float angle = (float)i / (float)NUM_ASTEROIDS * 360.0f;
+		float disp = (rand() % (int)(2 * 25.0f * 100)) / 100.0f - 25.0f;
+		float x = sin(angle) * radius + disp/2;
+		disp = (rand() % (int)(2 * 25.0f * 100)) / 100.0f - 25.0f;
+		float y = disp * 0.4;
+		disp = (rand() % (int)(2 * 25.0f * 100)) / 100.0f - 25.0f;
+		float z = cos(angle) * radius + disp/2;
+
+		temp_model = translate(temp_model, vec3(x, y, z));
+		temp_model = scale(temp_model, vec3(asteroid_scale_factor, asteroid_scale_factor, asteroid_scale_factor));
+
+		asteroid_model_matrices[i] = temp_model;
+	}
+}
+
+// TODO: Mobile camera
 void display() {
+	// tell GL to only draw onto a pixel if the shape is closer to the viewer	
+	mat4 view = look_at(cam_pos, target_pos, up);
+	mat4 persp_proj = perspective(45.0, (float)width / (float)height, 0.1, 200.0);
 
-	// tell GL to only draw onto a pixel if the shape is closer to the viewer
-	glEnable(GL_DEPTH_TEST); // enable depth-testing
-	glDepthFunc(GL_LESS); // depth-testing interprets a smaller value as "closer", allow nothing to exist at z=1 (skybox will go there)
 	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // we're not using the stencil buffer now
+	glEnable(GL_DEPTH_TEST);
+
+
+#pragma region asteroids
+	// *******************************************************************************
+	//									 Asteroids
+	// *******************************************************************************
+
+
+	// bind instance matrix buffer
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[INSTANCE_MAT_LOCATION]);
+	glBufferData(GL_ARRAY_BUFFER, NUM_ASTEROIDS * sizeof(mat4), &asteroid_model_matrices[0], GL_DYNAMIC_DRAW);
+
+	// bind asteroid VAO
+	glBindVertexArray(asteroid_vao);
+
+	// make asteroids look like mercury 
+	glBindTexture(GL_TEXTURE_2D, textures[1]);
+
+	// swap to asteroid shader
+	glUseProgram(asteroid_shader_program_ID);
+	// view and proj matrices for asteroid shader
+	int asteroid_view_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "view");
+	int asteroid_proj_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "proj");
+
+	glUniformMatrix4fv(asteroid_proj_mat_location, 1, GL_FALSE, persp_proj.m);
+	glUniformMatrix4fv(asteroid_view_mat_location, 1, GL_FALSE, view.m);
+
+#pragma omp parallel for
+	for (int i = 0; i < NUM_ASTEROIDS; i++) {
+		asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], i * 0.001f);
+
+		// self-rotation - translate to origin 
+		asteroid_model_matrices[i] = translate(asteroid_model_matrices[i], vec3(0.0f, 0.0f, 0.0f));
+		//asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], rotatez * i * 0.01f);
+
+		// translate back from origin
+		asteroid_model_matrices[i].m[3] = -asteroid_model_matrices[i].m[3];
+		asteroid_model_matrices[i].m[7] = -asteroid_model_matrices[i].m[7];
+		asteroid_model_matrices[i].m[11] = -asteroid_model_matrices[i].m[11];
+	}
+
+	// draw the things
+	glDrawElementsInstanced(
+		GL_TRIANGLES,
+		asteroid_data.mPointCount,
+		GL_UNSIGNED_INT,
+		0,
+		NUM_ASTEROIDS);
+
+	// unbind the asteroid VAO
+	glBindVertexArray(0);
+#pragma endregion
+
 	glUseProgram(shaderProgramID);
 	glBindVertexArray(vao);
-
-
-	//Declare your uniform variables that will be used in your shader
+	////Declare your uniform variables that will be used in your shader
 	int matrix_location = glGetUniformLocation(shaderProgramID, "model");
 	int view_mat_location = glGetUniformLocation(shaderProgramID, "view");
 	int proj_mat_location = glGetUniformLocation(shaderProgramID, "proj");
-
+	
+#pragma region sun
 	// *******************************************************************************
-	//							Root of the Hierarchy - The Sun 
+	//									 The Sun 
 	// *******************************************************************************
-
-	mat4 view = look_at(vec3(0,0,40), vec3(0,0,0), vec3(0, 1, 0)); //identity_mat4();
-	mat4 persp_proj = perspective(45.0, (float)width / (float)height, 0.1, 200.0);
+	
+	
 	mat4 sun_local = identity_mat4();
 
 	sun_local = rotate_y_deg(sun_local, rotatez);
+	// assign solar_rotation uniform at this point
+
 	sun_local = scale(sun_local, vec3(2.0f, 2.0f, 2.0f));
 	sun_local = translate(sun_local, vec3(0.0f, 0.0f, 0.0f));
 																			
 	mat4 sun_global = sun_local;	// for the root, we orient it in global space
 	glUniformMatrix4fv(proj_mat_location, 1, GL_FALSE, persp_proj.m);
 	glUniformMatrix4fv(view_mat_location, 1, GL_FALSE, view.m);
+	
 	glUniformMatrix4fv(matrix_location, 1, GL_FALSE, sun_global.m);
-
 	glBindTexture(GL_TEXTURE_2D, textures[0]);
 	glDrawArrays(GL_TRIANGLES, 0, mesh_data.mPointCount);
 
+
+#pragma endregion
+
+#pragma region planets
+
 	// *******************************************************************************
-	// *******************************************************************************
-	//					Primary Children of the Hierarchy - Planets 
-	// *******************************************************************************
+	//									 Planets 
 	// *******************************************************************************
 
-	for (int i = 1; i < 10; i++)
+	for (int i = 0; i < 9; i++)
 	{
-		mat4 planet_local = identity_mat4();
+		planet_local[i] = identity_mat4();
 		// self-rotation - translate to origin 
-		planet_local = translate(planet_local, vec3(0.0f, 0.0f, 0.0f));
-		planet_local = rotate_y_deg(planet_local, planet_rotation_pos[i - 1]);
-		
+		planet_local[i] = translate(planet_local[i], vec3(0.0f, 0.0f, 0.0f));
+		planet_local[i] = rotate_y_deg(planet_local[i], planets[i].rotation_pos);
+
 		// translate back from origin
-		planet_local.m[3] = -planet_local.m[3]; // = translate(planet_local, planet_orbit_radius[i - 1]);
-		planet_local.m[7] = -planet_local.m[7];
-		planet_local.m[11] = -planet_local.m[11];
+		planet_local[i].m[3] = -planet_local[i].m[3]; 
+		planet_local[i].m[7] = -planet_local[i].m[7];
+		planet_local[i].m[11] = -planet_local[i].m[11];
 
 		// scaling, dist. from origin and orbit now
-		planet_local = scale(planet_local, planet_radius[i-1]);	
-		planet_local = translate(planet_local, planet_orbit_radius[i-1]);						
-		planet_local = rotate_y_deg(planet_local, planet_orbital_pos[i]);
+		planet_local[i] = scale(planet_local[i], vec3(planets[i].radius, planets[i].radius, planets[i].radius));
+		planet_local[i] = translate(planet_local[i], vec3(planets[i].orbit_radius, 0, 0));
+		planet_local[i] = rotate_y_deg(planet_local[i], planets[i].orbit_pos);
+
+
+		planets[i].orbit_pos += planets[i].orbit_vel;
+		planets[i].rotation_pos += planets[i].rotation_speed;
+
+		if (planets[i].orbit_pos > 360.0f)
+			planets[i].orbit_pos -= 360.0f;
+
+		if (planets[i].rotation_pos > 360.0f)
+			planets[i].rotation_pos -= 360.0f;
 
 		glUniformMatrix4fv(proj_mat_location, 1, GL_FALSE, persp_proj.m);
 		glUniformMatrix4fv(view_mat_location, 1, GL_FALSE, view.m);
-		glUniformMatrix4fv(matrix_location, 1, GL_FALSE, planet_local.m);
+		glUniformMatrix4fv(matrix_location, 1, GL_FALSE, planet_local[i].m);
 
-		planet_orbital_pos[i - 1] += planet_orbit_vel[i - 1];
-		planet_rotation_pos[i - 1] += planet_rotation_vel[i - 1];
-
-		if (planet_orbital_pos[i - 1] > 360.0f)
-			planet_orbital_pos[i - 1] -= 360.0f;
-
-		if (planet_rotation_pos[i - 1] > 360.0f)
-			planet_rotation_pos[i - 1] -= 360.0f;
-
-
-		glBindTexture(GL_TEXTURE_2D, textures[i]);
+		// offset texture index by +1 as the sun texture is at location 0
+		glBindTexture(GL_TEXTURE_2D, textures[i + 1]);
 		glDrawArrays(GL_TRIANGLES, 0, mesh_data.mPointCount);
 	}
+#pragma endregion
+	glBindVertexArray(0);
+	// TODO: MOONS SECTION - UPDATE SATELLITES
 
-	/**********************************************************************************************
-									SKYBOX SECTION - LAST FOR SPEED
-	/**********************************************************************************************/
+
+#pragma region skybox_render
+	// *******************************************************************************
+	// *******************************************************************************
+	//						SKYBOX SECTION - LAST FOR SPEED
+	// *******************************************************************************
+	// *******************************************************************************
 
 	glUseProgram(skybox_shader_program_ID);
 	int skybox_view_loc = glGetUniformLocation(skybox_shader_program_ID, "view");
@@ -568,10 +766,14 @@ void display() {
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxes[0]);
 	glDrawArrays(GL_TRIANGLES, 0, 36);
+	glBindVertexArray(0);
+
+#pragma endregion
+
+
 
 
 	rotatez += 0.2f;
-
 	if (rotatez > 360.0f)
 		rotatez -= 360.0f;
 
@@ -580,56 +782,53 @@ void display() {
 
 
 #pragma region textures
-void load_texture(const char * filepath) {
+void load_textures(unsigned char * data[], int width[], int height[]) {
 	/*
 	texture-loading code from https://learnopengl.com/Getting-started/Textures 
 	*/
-	unsigned int tex;
-	glGenTextures(1, &tex);
-	glBindTexture(GL_TEXTURE_2D, tex);
-	// set the texture wrapping/filtering options (on the currently bound texture object)
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	// load and generate the texture
-	int width, height, nrChannels;
-	unsigned char *data = stbi_load(filepath, &width, &height, &nrChannels, 0);
-	
-	if (data)
-	{
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-		glGenerateMipmap(GL_TEXTURE_2D);
-	}
-	else
-	{
-		std::cout << "Failed to load texture at " << filepath << ". " << std::endl;
-	}
-	stbi_image_free(data);
+	for (int i = 0; i < NUM_TEXTURES; i++) {
 
-	textures.push_back(tex);
+		unsigned int tex;
+		glGenTextures(1, &tex);
+
+		glBindTexture(GL_TEXTURE_2D, tex);
+		// set the texture wrapping/filtering options (on the currently bound texture object)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		// load and generate the texture
+
+
+		if (data[i])
+		{
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width[i], height[i], 0, GL_RGB, GL_UNSIGNED_BYTE, data[i]);
+			glGenerateMipmap(GL_TEXTURE_2D);
+		}
+		else
+		{
+			std::cout << "Failed to load texture at " << locs[i] << ". " << std::endl;
+		}
+
+		textures[i] = tex;
+	}
 }
 
 
-void load_skybox(std::vector<char*> skybox_loc) {
+void load_skybox(unsigned char * data[], std::vector<char*> skybox_locs, int w[], int h[]) {
 	unsigned int tex;
 	glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
 
-	int w, h, n_chan;
-
-	for (int i = 0; i < skybox_loc.size(); i++) {
-		unsigned char * data = stbi_load(skybox_loc[i], &w, &h, &n_chan, 0);
-		
-		if (data) {
-			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+	for (int i = 0; i < 6; i++) {
+		if (data[i]) {
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, w[i], h[i], 0, GL_RGB, GL_UNSIGNED_BYTE, data[i]);
 		}
 		else {
-			std::cout << "Failed to load image at path: " << skybox_loc[i] << std::endl;
+			std::cout << "Failed to load image at path: " << skybox_locs[i] << std::endl;
 		}
-		stbi_image_free(data);
-
 	}
+
 
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -641,6 +840,7 @@ void load_skybox(std::vector<char*> skybox_loc) {
 }
 #pragma endregion
 
+// TODO: Nothing here, do something!
 void keypress(unsigned char key, int x, int y) {
 
 	switch (key)
@@ -665,9 +865,28 @@ void updateScene() {
 	glutPostRedisplay();
 }
 
+void initialise_planets() {
+
+#pragma omp parallel for
+	for (int i = 0; i < sizeof(planets) / sizeof(planet); i++) {
+		planets[i].orbit_pos = planet_orbital_pos[i];
+		planets[i].radius = planet_radius[i];
+		planets[i].orbit_vel = planet_orbit_vel[i];
+		planets[i].orbit_radius = planet_orbit_radius[i];
+		planets[i].rotation_pos = planet_rotation_pos[i];
+		planets[i].rotation_speed = planet_rotation_vel[i];
+		planets[i].name = planet_names[i];
+		planets[i].is_visible = true;
+	}
+}
+
+
 void init()
 {
+#pragma region shader_init
 	// Set up the shaders
+	char * instance_vs = "shaders/instance_vertex_shader.txt";
+	char * instance_fs = "shaders/instance_fragment_shader.txt";
 	char * object_vs = "shaders/simpleVertexShader.txt";
 	char * object_fs = "shaders/simpleFragmentShader.txt";
 	char * skybox_vs = "shaders/skybox_vertex_shader.txt";
@@ -675,26 +894,50 @@ void init()
 
 	shaderProgramID = CompileShaders(object_vs, object_fs);
 	skybox_shader_program_ID = CompileShaders(skybox_vs, skybox_fs);
+	asteroid_shader_program_ID = CompileShaders(instance_vs, instance_fs);
+#pragma endregion
 
 	// load mesh into a vertex buffer array
 	generateObjectBufferMesh();
 
-	// load textures
-	load_texture("textures/sun.jpg");
-	load_texture("textures/planets/mercury.jpg");
-	load_texture("textures/planets/venus.jpg");
-	load_texture("textures/planets/earth.jpg");
-	load_texture("textures/planets/mars.jpg");
-	load_texture("textures/planets/jupiter.jpg");
-	load_texture("textures/planets/saturn.jpg");
-	load_texture("textures/planets/uranus.jpg");
-	load_texture("textures/planets/neptune.jpg");
-	load_texture("textures/planets/pluto.jpg");
+	generate_instance_buffer_mesh();
 
-	load_skybox(blue_skybox_locations);
+#pragma region textures_init
+	int width[NUM_TEXTURES], height[NUM_TEXTURES], nrchannels[NUM_TEXTURES];
+	unsigned char * data[NUM_TEXTURES];
+
+#pragma omp parallel for	
+	for (int i = 0; i < NUM_TEXTURES; i++)
+		data[i] = stbi_load(locs[i], &width[i], &height[i], &nrchannels[i], 0);
+		
+	load_textures(data, width, height);
+
+#pragma omp parallel for	
+	for (int i = 0; i < NUM_TEXTURES; i++)
+		stbi_image_free(data[i]);
+#pragma endregion
+
+// TODO: GENERALISE THIS TO LOAD IN OTHER SKYBOXES O.T.F.
+#pragma region skybox_loading_init
+
+	int w[6], h[6], n_chan[6];
+	unsigned char * skybox_data[6];
+
+#pragma omp parallel for	
+	for (int i = 0; i < 6; i++)
+		skybox_data[i] = stbi_load(blue_skybox_locations[i], &w[i], &h[i], &n_chan[i], 0);
+
+	load_skybox(skybox_data, blue_skybox_locations, w, h);
+
+#pragma omp parallel for	
+	for (int i = 0; i < 6; i++)
+		stbi_image_free(skybox_data[i]);
+#pragma	endregion
+
+	initialise_planets();
+
+	init_asteroid_matrices();
 }
-
-// Placeholder code for the keypress
 
 int main(int argc, char** argv) {
 
@@ -703,6 +946,7 @@ int main(int argc, char** argv) {
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
 	glutInitWindowSize(width, height);
 	glutCreateWindow("Hello Triangle");
+
 
 	// Tell glut where the display function is
 	glutDisplayFunc(display);

@@ -1,6 +1,6 @@
 // from learnopengl tutorial
 
-#version 330
+#version 430 core
 in vec3 skybox;
 
 out vec3 TexCoords;
