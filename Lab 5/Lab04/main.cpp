@@ -1,4 +1,6 @@
 // Windows includes (For Time, IO, etc.)
+#pragma region includes
+
 #include <windows.h>
 #include <mmsystem.h>
 #include <iostream>
@@ -21,7 +23,9 @@
 #include "maths_funcs.h"
 #include "stb_image.h"
 
+#pragma endregion
 
+#pragma region constants
 
 /*----------------------------------------------------------------------------
 MESH TO LOAD
@@ -30,7 +34,7 @@ MESH TO LOAD
 // put the mesh in your project directory, or provide a filepath for it here
 #define MESH_NAME "models/sphere.dae"
 #define ASTEROID_MESH "models/sphere.dae"
-#define NUM_TEXTURES 10
+#define NUM_TEXTURES 14
 
 #define INDEX_BUFFER 0
 #define POSITION_LOCATION 1
@@ -38,9 +42,37 @@ MESH TO LOAD
 #define NORMAL_LOCATION 3
 #define INSTANCE_MAT_LOCATION 4
 
-#define NUM_ASTEROIDS 1000
+#define ASTEROID_BELT_RADIUS 185.0f
+// Saturn Ring Constants expressed relative to Saturn's radius
+#define ASTEROID_SCALE_FACTOR planets[0].radius * 0.4f
+
+// rings require much much smaller particles and a much tighter radius
+// they should appear to be annuli viewed at a distance
+#define RING_SCALE_FACTOR 0.1f
+#define RING_Y_SCALE_FACTOR 0.016125f
+
+#define D_RING_RADIUS 0.0644f
+#define C_RING_RADIUS 0.1502f
+#define B_RING_RADIUS 0.2190f
+#define A_RING_RADIUS 0.1254f
+#define F_RING_RADIUS 0.0002f
+
+#define DC_GAP_DIAMETER 0.0025f
+#define CB_GAP_DIAMETER 0.0000f
+#define BA_GAP_DIAMETER 0.0807f
+#define AF_GAP_DIAMETER 0.0446f
+
+#define INNER_RING_LIM 1.1489f
+#define OUTER_RING_LIM 2.4073f
+
+// EOF Saturn Ring Constants
+
+#define NUM_ASTEROIDS 2048
+#define NUM_RING_PARTS 256
 /*----------------------------------------------------------------------------
 ----------------------------------------------------------------------------*/
+
+#pragma endregion
 
 #pragma region SimpleTypes
 typedef struct
@@ -66,6 +98,9 @@ typedef struct
 #pragma endregion SimpleTypes
 
 using namespace std;
+
+#pragma region globals
+
 GLuint shaderProgramID, skybox_shader_program_ID, asteroid_shader_program_ID;
 
 ModelData mesh_data, asteroid_data;
@@ -90,18 +125,24 @@ unsigned int rt_vbo;
 unsigned int instance_mat_buffer;
 
 
-GLfloat dX = 0.0f;
-GLfloat dY = 0.0f;
+GLfloat camera_x = 1.0f;
+GLfloat camera_y = 10.0f;
+GLfloat camera_z = 20.0f;
+
+GLfloat target_x = 0.0f;
+GLfloat target_y = 0.5f;
+GLfloat target_z = 0.0f;
+
 GLfloat rotatez = 0.0f;
 
-vec3 cam_pos = vec3(1.0f, 4.0f, 20.0f);
-vec3 target_pos = vec3(0.0f, 0.5f, 0.0f);
 
 // TODO: Generalise calculation of 'up' vector for movement of camera
 vec3 up = vec3(0.0f, 1.0f, 0.0f);
 
 mat4 asteroid_model_matrices[NUM_ASTEROIDS];// = (mat4 *)(malloc(sizeof(mat4) * NUM_ASTEROIDS));
 
+// inner -> outer rings ascending numerical order
+mat4 saturn_ring_matrices[5][NUM_RING_PARTS];
 
 char * locs[NUM_TEXTURES] = {
 	"textures/sun.jpg",
@@ -113,11 +154,18 @@ char * locs[NUM_TEXTURES] = {
 	"textures/planets/saturn.jpg",
 	"textures/planets/uranus.jpg",
 	"textures/planets/neptune.jpg",
-	"textures/planets/pluto.jpg"
+	"textures/planets/pluto.jpg",
+	"textures/satellites/d_ring.png",
+	"textures/satellites/c_ring.png",
+	"textures/satellites/b_ring.png",
+	"textures/satellites/a_ring.png"
 };
 
 unsigned int textures[NUM_TEXTURES];
 std::vector<unsigned int> skyboxes;
+
+#pragma endregion
+
 #pragma region body_data
 GLfloat earth_orbit_vel = 1.0f;
 // inaccurate, but the inner planets are difficult to discern due to their size
@@ -137,10 +185,10 @@ mat4 planet_local[9] = {
 
 // inaccurate, but they're imperceptible on their true scale (relative to size of sun)
 const char * planet_names[9] = {
-	"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto",
+	"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"
 };
 const GLfloat planet_orbit_radius[9] = {
-	2.0f, 3.0f, 4.0f, 4.5f, 8.0f, 9.0f, 10.5f, 11.4f, 12.0f
+	2.0f, 3.0f, 4.0f, 4.5f, 7.8f, 11.0f, 13.5f, 14.4f, 15.0f
 };
 const GLfloat planet_radius[9] = {
 	0.08f, 0.18f, 0.2f, 0.1f, 0.5f, 0.45f, 0.35f, 0.32f, 0.06f
@@ -579,32 +627,109 @@ void generateObjectBufferMesh() {
 }
 #pragma endregion VBO_FUNCTIONS
 
+// initialising Saturn's rings as well as the asteroids
 void init_asteroid_matrices() {
-	// embarrassingly parallel 
+	
 #pragma omp parallel for
 	for (int i = 0; i < NUM_ASTEROIDS; i++) {
-		mat4 temp_model = identity_mat4();
-		float asteroid_scale_factor = planets[0].radius * 0.4f;
-		float radius = 185.0f;
-
-		// asteroids size 2x mercury (for now)
 		float angle = (float)i / (float)NUM_ASTEROIDS * 360.0f;
-		float disp = (rand() % (int)(2 * 25.0f * 100)) / 100.0f - 25.0f;
-		float x = sin(angle) * radius + disp/2;
-		disp = (rand() % (int)(2 * 25.0f * 100)) / 100.0f - 25.0f;
-		float y = disp * 0.4;
-		disp = (rand() % (int)(2 * 25.0f * 100)) / 100.0f - 25.0f;
-		float z = cos(angle) * radius + disp/2;
+		
+		// declare each matrix inside the for loop so each thread has its own copy 
+		mat4 temp_model = identity_mat4();
+		
+		float disp = (rand() % (int)(2 * 25.0f * 100)) / 200.0f;
+		float asteroid_x = sin(angle) * ASTEROID_BELT_RADIUS + disp /2;
 
-		temp_model = translate(temp_model, vec3(x, y, z));
-		temp_model = scale(temp_model, vec3(asteroid_scale_factor, asteroid_scale_factor, asteroid_scale_factor));
+		disp = (rand() % (int)(2 * 25.0f * 100)) / 200.0f;// -25.0f;
+		float asteroid_y = disp * 0.4;
 
+		disp = (rand() % (int)(2 * 25.0f * 100)) / 200.0f;// -25.0f;
+		float asteroid_z = cos(angle) * ASTEROID_BELT_RADIUS + disp /2;
+
+		temp_model = translate(temp_model, vec3(asteroid_x, asteroid_y, asteroid_z));
+		temp_model = scale(temp_model, vec3(ASTEROID_SCALE_FACTOR, ASTEROID_SCALE_FACTOR, ASTEROID_SCALE_FACTOR));
 		asteroid_model_matrices[i] = temp_model;
+	}
+}
+
+void init_rings() {
+
+	float d_ring_centre = planets[5].radius + ((INNER_RING_LIM + D_RING_RADIUS) * planets[5].radius);
+	float c_ring_centre = d_ring_centre + ((D_RING_RADIUS + DC_GAP_DIAMETER + C_RING_RADIUS) * planets[5].radius);
+	float b_ring_centre = c_ring_centre + ((C_RING_RADIUS + CB_GAP_DIAMETER + B_RING_RADIUS) * planets[5].radius);
+	float a_ring_centre = b_ring_centre + ((B_RING_RADIUS + BA_GAP_DIAMETER + A_RING_RADIUS) * planets[5].radius);
+	float f_ring_centre = planets[5].radius + (planets[5].radius * OUTER_RING_LIM);
+	mat4 scaled_identity = scale(identity_mat4(), vec3(RING_SCALE_FACTOR, RING_Y_SCALE_FACTOR, RING_SCALE_FACTOR));
+
+	int d_disp_dim = (int) ((D_RING_RADIUS * planets[5].radius) * 1000.0f);
+	int c_disp_dim = (int) ((C_RING_RADIUS * planets[5].radius) * 1000.0f);
+	int b_disp_dim = (int) ((B_RING_RADIUS * planets[5].radius) * 1000.0f);
+	int a_disp_dim = (int) ((A_RING_RADIUS * planets[5].radius) * 1000.0f);
+
+#pragma omp parallel for
+	for (int i = 0; i < NUM_RING_PARTS; i++) {
+
+		float angle = (float)i / (float)NUM_RING_PARTS * 360.0f;
+
+		float disp = rand() % d_disp_dim;
+		disp /= 1000.0f;
+		float ring_one_x = sin(angle) * d_ring_centre + disp;
+		
+		disp = rand() % d_disp_dim;
+		disp /= 1000.0f;
+		float ring_one_z = cos(angle) * d_ring_centre + disp;
+		
+		mat4 temp_ring = translate(scaled_identity, vec3(ring_one_x, 0.0f, ring_one_z));
+		saturn_ring_matrices[0][i] = planet_local[5] * temp_ring;
+
+		disp = rand() % c_disp_dim;
+		disp /= 1000.0f;
+		float ring_two_x = sin(angle) * c_ring_centre + disp;
+		
+		disp = rand() % c_disp_dim;
+		disp /= 1000.0f;
+		float ring_two_z = cos(angle) * c_ring_centre + disp;
+		
+		temp_ring = translate(scaled_identity, vec3(ring_two_x, 0.0f, ring_two_z));
+		saturn_ring_matrices[1][i] = planet_local[5] * temp_ring;
+
+		disp = rand() % b_disp_dim;
+		disp /= 1000.0f;
+		float ring_three_x = sin(angle) * b_ring_centre + disp;
+		
+		disp = rand() % b_disp_dim;
+		disp /= 1000.0f;
+		float ring_three_z = cos(angle) * b_ring_centre + disp;
+		
+		temp_ring = translate(scaled_identity, vec3(ring_three_x, 0.0f, ring_three_z));
+		saturn_ring_matrices[2][i] = planet_local[5] * temp_ring;
+
+		disp = rand() % a_disp_dim;
+		disp /= 1000.0f;
+		float ring_four_x = sin(angle) * a_ring_centre + disp;
+		
+		disp = rand() % a_disp_dim;
+		disp /= 1000.0f;
+		float ring_four_z = cos(angle) * a_ring_centre + disp;
+		
+		temp_ring = translate(scaled_identity, vec3(ring_four_x, 0.0f, ring_four_z));
+		saturn_ring_matrices[3][i] = planet_local[5] * temp_ring;
+
+		float ring_five_x = sin(angle) * f_ring_centre;
+		float ring_five_z = cos(angle) * f_ring_centre;
+		
+		temp_ring = translate(scaled_identity, vec3(ring_five_x, 0.0f, ring_five_z));
+		saturn_ring_matrices[4][i] = planet_local[5] * temp_ring;
+
+
 	}
 }
 
 // TODO: Mobile camera
 void display() {
+
+	vec3 cam_pos = vec3(camera_x, camera_y, camera_z);
+	vec3 target_pos = vec3(target_x, target_y, target_z);
 	// tell GL to only draw onto a pixel if the shape is closer to the viewer	
 	mat4 view = look_at(cam_pos, target_pos, up);
 	mat4 persp_proj = perspective(45.0, (float)width / (float)height, 0.1, 200.0);
@@ -614,70 +739,18 @@ void display() {
 	glEnable(GL_DEPTH_TEST);
 
 
-#pragma region asteroids
+	
+#pragma region sun
 	// *******************************************************************************
-	//									 Asteroids
+	//									 The Sun 
 	// *******************************************************************************
-
-
-	// bind instance matrix buffer
-	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[INSTANCE_MAT_LOCATION]);
-	glBufferData(GL_ARRAY_BUFFER, NUM_ASTEROIDS * sizeof(mat4), &asteroid_model_matrices[0], GL_DYNAMIC_DRAW);
-
-	// bind asteroid VAO
-	glBindVertexArray(asteroid_vao);
-
-	// make asteroids look like mercury 
-	glBindTexture(GL_TEXTURE_2D, textures[1]);
-
-	// swap to asteroid shader
-	glUseProgram(asteroid_shader_program_ID);
-	// view and proj matrices for asteroid shader
-	int asteroid_view_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "view");
-	int asteroid_proj_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "proj");
-
-	glUniformMatrix4fv(asteroid_proj_mat_location, 1, GL_FALSE, persp_proj.m);
-	glUniformMatrix4fv(asteroid_view_mat_location, 1, GL_FALSE, view.m);
-
-#pragma omp parallel for
-	for (int i = 0; i < NUM_ASTEROIDS; i++) {
-		asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], i * 0.001f);
-
-		// self-rotation - translate to origin 
-		asteroid_model_matrices[i] = translate(asteroid_model_matrices[i], vec3(0.0f, 0.0f, 0.0f));
-		//asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], rotatez * i * 0.01f);
-
-		// translate back from origin
-		asteroid_model_matrices[i].m[3] = -asteroid_model_matrices[i].m[3];
-		asteroid_model_matrices[i].m[7] = -asteroid_model_matrices[i].m[7];
-		asteroid_model_matrices[i].m[11] = -asteroid_model_matrices[i].m[11];
-	}
-
-	// draw the things
-	glDrawElementsInstanced(
-		GL_TRIANGLES,
-		asteroid_data.mPointCount,
-		GL_UNSIGNED_INT,
-		0,
-		NUM_ASTEROIDS);
-
-	// unbind the asteroid VAO
-	glBindVertexArray(0);
-#pragma endregion
-
 	glUseProgram(shaderProgramID);
 	glBindVertexArray(vao);
 	////Declare your uniform variables that will be used in your shader
 	int matrix_location = glGetUniformLocation(shaderProgramID, "model");
 	int view_mat_location = glGetUniformLocation(shaderProgramID, "view");
 	int proj_mat_location = glGetUniformLocation(shaderProgramID, "proj");
-	
-#pragma region sun
-	// *******************************************************************************
-	//									 The Sun 
-	// *******************************************************************************
-	
-	
+
 	mat4 sun_local = identity_mat4();
 
 	sun_local = rotate_y_deg(sun_local, rotatez);
@@ -738,10 +811,84 @@ void display() {
 		glBindTexture(GL_TEXTURE_2D, textures[i + 1]);
 		glDrawArrays(GL_TRIANGLES, 0, mesh_data.mPointCount);
 	}
-#pragma endregion
+
 	glBindVertexArray(0);
+
+#pragma endregion
+
+	// DISPATCH COMPUTE SHADERS FOR RINGS HERE-ISH
+
 	// TODO: MOONS SECTION - UPDATE SATELLITES
 
+
+#pragma region asteroids
+	// *******************************************************************************
+	//									 Asteroids
+	// *******************************************************************************
+	
+	// swap to asteroid shader
+	glUseProgram(asteroid_shader_program_ID);
+	// view and proj matrices for asteroid shader
+	int asteroid_view_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "view");
+	int asteroid_proj_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "proj");
+	
+	// bind asteroid VAO
+	glBindVertexArray(asteroid_vao);
+	
+	// bind & populate instance matrix buffer
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[INSTANCE_MAT_LOCATION]);
+	glBufferData(GL_ARRAY_BUFFER, NUM_ASTEROIDS * sizeof(mat4), &asteroid_model_matrices[0], GL_DYNAMIC_DRAW);
+
+	// make asteroids look like mercury 
+	glBindTexture(GL_TEXTURE_2D, textures[1]);
+
+	// assign uniforms
+	glUniformMatrix4fv(asteroid_proj_mat_location, 1, GL_FALSE, persp_proj.m);
+	glUniformMatrix4fv(asteroid_view_mat_location, 1, GL_FALSE, view.m);
+
+	// draw the things
+	glDrawElementsInstanced(
+		GL_TRIANGLES,
+		asteroid_data.mPointCount,
+		GL_UNSIGNED_INT,
+		0,
+		NUM_ASTEROIDS);
+
+	// update matrices for next go around
+#pragma omp parallel for
+	for (int i = 0; i < NUM_ASTEROIDS; i++) {
+		asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], i * 0.001f);
+	}
+#pragma endregion
+
+#pragma region rings
+
+	init_rings();
+
+	// ASTEROID RENDERING FOR SATURN RINGS
+	for (int j = 0; j < 5; j++) {
+		// bind instance matrix buffer
+		glBufferData(GL_ARRAY_BUFFER, NUM_RING_PARTS * sizeof(mat4), &saturn_ring_matrices[j][0], GL_DYNAMIC_DRAW);
+
+		if (j < 4) {
+			glBindTexture(GL_TEXTURE_2D, textures[10 + j]);
+		}
+		else {
+			// use b ring texture for f ring
+			glBindTexture(GL_TEXTURE_2D, textures[12]);
+		}
+		glDrawElementsInstanced(
+			GL_TRIANGLES,
+			asteroid_data.mPointCount,
+			GL_UNSIGNED_INT,
+			0,
+			NUM_RING_PARTS);
+	}
+	// unbind the asteroid VAO
+	glBindVertexArray(0);
+#pragma endregion
+
+	glBindVertexArray(0);
 
 #pragma region skybox_render
 	// *******************************************************************************
@@ -769,9 +916,6 @@ void display() {
 	glBindVertexArray(0);
 
 #pragma endregion
-
-
-
 
 	rotatez += 0.2f;
 	if (rotatez > 360.0f)
@@ -814,7 +958,6 @@ void load_textures(unsigned char * data[], int width[], int height[]) {
 	}
 }
 
-
 void load_skybox(unsigned char * data[], std::vector<char*> skybox_locs, int w[], int h[]) {
 	unsigned int tex;
 	glGenTextures(1, &tex);
@@ -845,6 +988,33 @@ void keypress(unsigned char key, int x, int y) {
 
 	switch (key)
 	{
+	case('w'): {
+
+		break;
+	}
+	case('s'): {
+
+		break;
+	}
+	case('a'): {
+
+		break;
+	}
+	case('d'): {
+
+		break;
+	}
+	case(' '): {
+		camera_y += 0.1f;
+		target_y += 0.1f;
+
+		break;
+	}
+	case('x'): {
+		camera_y -= 0.1f;
+		target_y -= 0.1f;
+		break;
+	}
 	}
 }
 
@@ -899,7 +1069,6 @@ void init()
 
 	// load mesh into a vertex buffer array
 	generateObjectBufferMesh();
-
 	generate_instance_buffer_mesh();
 
 #pragma region textures_init
@@ -907,14 +1076,15 @@ void init()
 	unsigned char * data[NUM_TEXTURES];
 
 #pragma omp parallel for	
-	for (int i = 0; i < NUM_TEXTURES; i++)
+	for (int i = 0; i < NUM_TEXTURES; i++) {
 		data[i] = stbi_load(locs[i], &width[i], &height[i], &nrchannels[i], 0);
-		
+	}
 	load_textures(data, width, height);
 
 #pragma omp parallel for	
-	for (int i = 0; i < NUM_TEXTURES; i++)
+	for (int i = 0; i < NUM_TEXTURES; i++) {
 		stbi_image_free(data[i]);
+	}
 #pragma endregion
 
 // TODO: GENERALISE THIS TO LOAD IN OTHER SKYBOXES O.T.F.
@@ -924,18 +1094,18 @@ void init()
 	unsigned char * skybox_data[6];
 
 #pragma omp parallel for	
-	for (int i = 0; i < 6; i++)
+	for (int i = 0; i < 6; i++) {
 		skybox_data[i] = stbi_load(blue_skybox_locations[i], &w[i], &h[i], &n_chan[i], 0);
-
+	}
 	load_skybox(skybox_data, blue_skybox_locations, w, h);
 
 #pragma omp parallel for	
-	for (int i = 0; i < 6; i++)
+	for (int i = 0; i < 6; i++) {
 		stbi_image_free(skybox_data[i]);
+	}
 #pragma	endregion
 
 	initialise_planets();
-
 	init_asteroid_matrices();
 }
 

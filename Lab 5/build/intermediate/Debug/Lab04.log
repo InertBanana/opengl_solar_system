@@ -1,6 +1,13 @@
 ﻿  main.cpp
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(463): warning C4018: '<': signed/unsigned mismatch
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(595): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(610): warning C4305: 'argument': truncation from 'double' to 'float'
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(848): warning C4060: switch statement contains no 'case' or 'default' labels
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(511): warning C4018: '<': signed/unsigned mismatch
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(644): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(674): warning C4244: 'initializing': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(678): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(685): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(689): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(696): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(700): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(707): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(711): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(735): warning C4305: 'argument': truncation from 'double' to 'float'
   Lab04.vcxproj -> C:\Users\andrew\Documents\CS4052\201819\Lab 5\\build\executables\Debug\Lab 04.exe
