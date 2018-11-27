@@ -1,6 +1,5 @@
-// Windows includes (For Time, IO, etc.)
 #pragma region includes
-
+// Windows includes (For Time, IO, etc.)
 #include <windows.h>
 #include <mmsystem.h>
 #include <iostream>
@@ -34,7 +33,7 @@ MESH TO LOAD
 // put the mesh in your project directory, or provide a filepath for it here
 #define MESH_NAME "models/sphere.dae"
 #define ASTEROID_MESH "models/sphere.dae"
-#define NUM_TEXTURES 14
+#define NUM_TEXTURES 16
 
 #define INDEX_BUFFER 0
 #define POSITION_LOCATION 1
@@ -42,13 +41,13 @@ MESH TO LOAD
 #define NORMAL_LOCATION 3
 #define INSTANCE_MAT_LOCATION 4
 
-#define ASTEROID_BELT_RADIUS 185.0f
+#define ASTEROID_BELT_RADIUS 175.0f
 // Saturn Ring Constants expressed relative to Saturn's radius
 #define ASTEROID_SCALE_FACTOR planets[0].radius * 0.4f
 
 // rings require much much smaller particles and a much tighter radius
 // they should appear to be annuli viewed at a distance
-#define RING_SCALE_FACTOR 0.1f
+#define RING_SCALE_FACTOR 0.10f
 #define RING_Y_SCALE_FACTOR 0.016125f
 
 #define D_RING_RADIUS 0.0644f
@@ -65,10 +64,10 @@ MESH TO LOAD
 #define INNER_RING_LIM 1.1489f
 #define OUTER_RING_LIM 2.4073f
 
-// EOF Saturn Ring Constants
+// end Saturn Ring Constants
 
-#define NUM_ASTEROIDS 2048
-#define NUM_RING_PARTS 256
+#define NUM_ASTEROIDS 1024
+#define NUM_RING_PARTS 128
 /*----------------------------------------------------------------------------
 ----------------------------------------------------------------------------*/
 
@@ -97,9 +96,9 @@ typedef struct
 
 #pragma endregion SimpleTypes
 
-using namespace std;
-
 #pragma region globals
+
+using namespace std;
 
 GLuint shaderProgramID, skybox_shader_program_ID, asteroid_shader_program_ID;
 
@@ -109,12 +108,12 @@ unsigned int vao = 0;
 unsigned int skybox_vao = 0;
 unsigned int vp_vbo = 0;
 unsigned int asteroid_vao = 0;
+int skybox_in_use = 0;
 
 GLuint asteroid_buffers[5];
 std::vector<unsigned int> Indices;
-
-int width = 800;
-int height = 600;
+int width;
+int height;
 
 planet planets[9];
 
@@ -124,22 +123,19 @@ GLuint loc1, loc2, loc3, loc4;
 unsigned int rt_vbo;
 unsigned int instance_mat_buffer;
 
-
-GLfloat camera_x = 1.0f;
-GLfloat camera_y = 10.0f;
-GLfloat camera_z = 20.0f;
-
-GLfloat target_x = 0.0f;
-GLfloat target_y = 0.5f;
-GLfloat target_z = 0.0f;
-
 GLfloat rotatez = 0.0f;
+int mouse_x = 0;
+int mouse_y = 0;
+bool no_warp = false;
 
+const GLfloat mouse_dy = 0.5f;
 
-// TODO: Generalise calculation of 'up' vector for movement of camera
+vec3 cam_pos = vec3(1.0f, 10.0f, 20.0f);
+vec3 target_pos = vec3(0.0f, 0.5f, 0.0f);
+vec3 cam_to_target;
 vec3 up = vec3(0.0f, 1.0f, 0.0f);
 
-mat4 asteroid_model_matrices[NUM_ASTEROIDS];// = (mat4 *)(malloc(sizeof(mat4) * NUM_ASTEROIDS));
+mat4 asteroid_model_matrices[2][NUM_ASTEROIDS];
 
 // inner -> outer rings ascending numerical order
 mat4 saturn_ring_matrices[5][NUM_RING_PARTS];
@@ -158,7 +154,9 @@ char * locs[NUM_TEXTURES] = {
 	"textures/satellites/d_ring.png",
 	"textures/satellites/c_ring.png",
 	"textures/satellites/b_ring.png",
-	"textures/satellites/a_ring.png"
+	"textures/satellites/a_ring.png",
+	"textures/satellites/moon.jpg",
+	"textures/satellites/kuiper_belt.png"
 };
 
 unsigned int textures[NUM_TEXTURES];
@@ -184,11 +182,19 @@ mat4 planet_local[9] = {
 };
 
 // inaccurate, but they're imperceptible on their true scale (relative to size of sun)
+const int planet_moons[9] = {
+	0, 0, 1, 2, 4, 1, 5, 1, 5
+};
+
+const float lunar_rel_radius[9] = { 
+	0.25f, 0.25, 0.25, 0.25, 0.1, 0.1, 0.1, 0.1, 0.25
+};
+
 const char * planet_names[9] = {
 	"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"
 };
 const GLfloat planet_orbit_radius[9] = {
-	2.0f, 3.0f, 4.0f, 4.5f, 7.8f, 11.0f, 13.5f, 14.4f, 15.0f
+	2.0f, 3.0f, 4.0f, 5.0f, 9.0f, 14.0f, 16.0f, 18.4f, 20.0f
 };
 const GLfloat planet_radius[9] = {
 	0.08f, 0.18f, 0.2f, 0.1f, 0.5f, 0.45f, 0.35f, 0.32f, 0.06f
@@ -239,51 +245,52 @@ GLfloat planet_rotation_pos[9] = {
 };
 
 #pragma endregion
+
 #pragma region skybox
 
 std::vector<char*> blue_skybox_locations = {
-	"textures/skybox/blue/bkg1_back.png",
+	"textures/skybox/blue/bkg1_right.png",
+	"textures/skybox/blue/bkg1_left.png",
+	"textures/skybox/blue/bkg1_top.png",	
 	"textures/skybox/blue/bkg1_bot.png",
 	"textures/skybox/blue/bkg1_front.png",
-	"textures/skybox/blue/bkg1_left.png",
-	"textures/skybox/blue/bkg1_right.png",
-	"textures/skybox/blue/bkg1_top.png",
+	"textures/skybox/blue/bkg1_back.png",
 };
 
 std::vector<char*> lightblue_skybox_locations = {
-	"textures/skybox/lightblue/back.png",
+	"textures/skybox/lightblue/right.png",
+	"textures/skybox/lightblue/left.png",	
+	"textures/skybox/lightblue/top.png",
 	"textures/skybox/lightblue/bot.png",
 	"textures/skybox/lightblue/front.png",
-	"textures/skybox/lightblue/left.png",
-	"textures/skybox/lightblue/right.png",
-	"textures/skybox/lightblue/top.png",
+	"textures/skybox/lightblue/back.png",
 };
 
 std::vector<char*> red_skybox_one_locations = {
-	"textures/skybox/red/bkg1_back6.png",
+	"textures/skybox/red/bkg1_right1.png",
+	"textures/skybox/red/bkg1_left2.png",
+	"textures/skybox/red/bkg1_top3.png",
 	"textures/skybox/red/bkg1_bottom4.png",
 	"textures/skybox/red/bkg1_front5.png",
-	"textures/skybox/red/bkg1_left2.png",
-	"textures/skybox/red/bkg1_right1.png",
-	"textures/skybox/red/bkg1_top3.png",
+	"textures/skybox/red/bkg1_back6.png",
 };
 
 std::vector<char*> red_skybox_two_locations = {
-	"textures/skybox/red/bkg2_back6.png",
+	"textures/skybox/red/bkg2_right1.png",
+	"textures/skybox/red/bkg2_left2.png",
+	"textures/skybox/red/bkg2_top3.png",
 	"textures/skybox/red/bkg2_bottom4.png",
 	"textures/skybox/red/bkg2_front5.png",
-	"textures/skybox/red/bkg2_left2.png",
-	"textures/skybox/red/bkg2_right1.png",
-	"textures/skybox/red/bkg2_top3.png",
+	"textures/skybox/red/bkg2_back6.png",
 };
 
 std::vector<char*> red_skybox_three_locations = {
-	"textures/skybox/red/bkg3_back6.png",
+	"textures/skybox/red/bkg3_right1.png",
+	"textures/skybox/red/bkg3_left2.png",
+	"textures/skybox/red/bkg3_top3.png",
 	"textures/skybox/red/bkg3_bottom4.png",
 	"textures/skybox/red/bkg3_front5.png",
-	"textures/skybox/red/bkg3_left2.png",
-	"textures/skybox/red/bkg3_right1.png",
-	"textures/skybox/red/bkg3_top3.png",
+	"textures/skybox/red/bkg3_back6.png",
 };
 
 float skybox_vertices[] = {
@@ -500,7 +507,7 @@ GLuint CompileShaders(char * vs_path, char * fs_path)
 	return temp_shader_program_ID;
 }
 #pragma endregion SHADER_FUNCTIONS
-	
+
 #pragma region VBO_FUNCTIONS
 void generate_instance_buffer_mesh() {
 
@@ -621,34 +628,39 @@ void generateObjectBufferMesh() {
 	glBindBuffer(GL_ARRAY_BUFFER, skybox_vbo);
 	glVertexAttribPointer(loc4, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 	
-	// switch back to 'object' shader program. TODO: possible redundant step
 	glUseProgram(shaderProgramID);
 #pragma endregion
 }
 #pragma endregion VBO_FUNCTIONS
 
+#pragma region instance_mat_init
+
 // initialising Saturn's rings as well as the asteroids
 void init_asteroid_matrices() {
-	
+
+	for (int k = 0; k < 2; k++) {
+
 #pragma omp parallel for
-	for (int i = 0; i < NUM_ASTEROIDS; i++) {
-		float angle = (float)i / (float)NUM_ASTEROIDS * 360.0f;
-		
-		// declare each matrix inside the for loop so each thread has its own copy 
-		mat4 temp_model = identity_mat4();
-		
-		float disp = (rand() % (int)(2 * 25.0f * 100)) / 200.0f;
-		float asteroid_x = sin(angle) * ASTEROID_BELT_RADIUS + disp /2;
+		for (int i = 0; i < NUM_ASTEROIDS; i++) {
+			float angle = (float)i / (float)NUM_ASTEROIDS * 360.0f;
 
-		disp = (rand() % (int)(2 * 25.0f * 100)) / 200.0f;// -25.0f;
-		float asteroid_y = disp * 0.4;
+			// declare each matrix inside the for loop so each thread has its own copy 
+			mat4 temp_model = identity_mat4();
 
-		disp = (rand() % (int)(2 * 25.0f * 100)) / 200.0f;// -25.0f;
-		float asteroid_z = cos(angle) * ASTEROID_BELT_RADIUS + disp /2;
+			float disp = (rand() % (int)(2 * 25.0f * 100)) / (200.0f / (1 + (4*k)));
+			float asteroid_x = (sin(angle) * ASTEROID_BELT_RADIUS * ((4 * k) + 1)) + disp / 2;
 
-		temp_model = translate(temp_model, vec3(asteroid_x, asteroid_y, asteroid_z));
-		temp_model = scale(temp_model, vec3(ASTEROID_SCALE_FACTOR, ASTEROID_SCALE_FACTOR, ASTEROID_SCALE_FACTOR));
-		asteroid_model_matrices[i] = temp_model;
+			disp = (rand() % (int)(2 * 25.0f * 100)) / (200.0f / (1 + (4 * k)));// -25.0f;
+			float asteroid_y = disp * 0.4;
+
+			disp = (rand() % (int)(2 * 25.0f * 100)) / (200.0f / (1 + (4 * k)));// -25.0f;
+			float asteroid_z = (cos(angle) * ASTEROID_BELT_RADIUS * ( (4 * k) + 1)) + disp / 2;
+
+			temp_model = translate(temp_model, vec3(asteroid_x, asteroid_y, asteroid_z));
+			temp_model = scale(temp_model, vec3(ASTEROID_SCALE_FACTOR, ASTEROID_SCALE_FACTOR, ASTEROID_SCALE_FACTOR));
+			asteroid_model_matrices[k][i] = temp_model;
+		}
+
 	}
 }
 
@@ -725,11 +737,13 @@ void init_rings() {
 	}
 }
 
-// TODO: Mobile camera
+#pragma endregion
+
 void display() {
 
-	vec3 cam_pos = vec3(camera_x, camera_y, camera_z);
-	vec3 target_pos = vec3(target_x, target_y, target_z);
+#pragma region init
+
+	cam_to_target = target_pos - cam_pos;
 	// tell GL to only draw onto a pixel if the shape is closer to the viewer	
 	mat4 view = look_at(cam_pos, target_pos, up);
 	mat4 persp_proj = perspective(45.0, (float)width / (float)height, 0.1, 200.0);
@@ -738,8 +752,7 @@ void display() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // we're not using the stencil buffer now
 	glEnable(GL_DEPTH_TEST);
 
-
-	
+#pragma endregion	
 #pragma region sun
 	// *******************************************************************************
 	//									 The Sun 
@@ -769,12 +782,7 @@ void display() {
 
 
 #pragma endregion
-
-#pragma region planets
-
-	// *******************************************************************************
-	//									 Planets 
-	// *******************************************************************************
+#pragma region planets and moons
 
 	for (int i = 0; i < 9; i++)
 	{
@@ -784,15 +792,45 @@ void display() {
 		planet_local[i] = rotate_y_deg(planet_local[i], planets[i].rotation_pos);
 
 		// translate back from origin
-		planet_local[i].m[3] = -planet_local[i].m[3]; 
+		planet_local[i].m[3] = -planet_local[i].m[3];
 		planet_local[i].m[7] = -planet_local[i].m[7];
 		planet_local[i].m[11] = -planet_local[i].m[11];
 
 		// scaling, dist. from origin and orbit now
 		planet_local[i] = scale(planet_local[i], vec3(planets[i].radius, planets[i].radius, planets[i].radius));
+			
+		// jupiter will follow the sun
 		planet_local[i] = translate(planet_local[i], vec3(planets[i].orbit_radius, 0, 0));
+		planet_local[i] = sun_local * planet_local[i];
 		planet_local[i] = rotate_y_deg(planet_local[i], planets[i].orbit_pos);
 
+#pragma region moons
+
+		if (planet_moons[i] > 0) {
+			// generic moon texture at 14
+			glBindTexture(GL_TEXTURE_2D, textures[14]);
+
+			for (int j = 0; j < planet_moons[i]; j++) {
+				mat4 moon_local = identity_mat4();
+				moon_local = scale(moon_local, vec3(lunar_rel_radius[i], lunar_rel_radius[i], lunar_rel_radius[i]));
+				float translate_offset = -1;
+
+				for (int k = 0; k < j; k++)
+					translate_offset *= -1;
+				translate_offset += j / planet_moons[i];
+
+
+				moon_local = translate(moon_local, vec3(translate_offset, translate_offset / 10, translate_offset));
+				moon_local = rotate_y_deg(moon_local, j * planets[i].orbit_pos);
+				moon_local = planet_local[i] * moon_local;
+	
+
+				glUniformMatrix4fv(matrix_location, 1, GL_FALSE, moon_local.m);
+
+				glDrawArrays(GL_TRIANGLES, 0, mesh_data.mPointCount);
+			}
+		}
+#pragma endregion
 
 		planets[i].orbit_pos += planets[i].orbit_vel;
 		planets[i].rotation_pos += planets[i].rotation_speed;
@@ -815,31 +853,27 @@ void display() {
 	glBindVertexArray(0);
 
 #pragma endregion
-
-	// DISPATCH COMPUTE SHADERS FOR RINGS HERE-ISH
-
-	// TODO: MOONS SECTION - UPDATE SATELLITES
-
-
 #pragma region asteroids
-	// *******************************************************************************
-	//									 Asteroids
-	// *******************************************************************************
-	
+
+
 	// swap to asteroid shader
 	glUseProgram(asteroid_shader_program_ID);
 	// view and proj matrices for asteroid shader
 	int asteroid_view_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "view");
 	int asteroid_proj_mat_location = glGetUniformLocation(asteroid_shader_program_ID, "proj");
-	
+	int instance_parent_matrix_location = glGetUniformLocation(asteroid_shader_program_ID, "parent");
+
+	// inherit solar rotation for the asteroid orbits (NOTE CODE IN instance_vertex_shader.txt)
+	glUniformMatrix4fv(instance_parent_matrix_location, 1, GL_FALSE, sun_local.m);
+
 	// bind asteroid VAO
 	glBindVertexArray(asteroid_vao);
 	
 	// bind & populate instance matrix buffer
 	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[INSTANCE_MAT_LOCATION]);
-	glBufferData(GL_ARRAY_BUFFER, NUM_ASTEROIDS * sizeof(mat4), &asteroid_model_matrices[0], GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, NUM_ASTEROIDS * sizeof(mat4), &asteroid_model_matrices[0][0], GL_DYNAMIC_DRAW);
 
-	// make asteroids look like mercury 
+	// make asteroids look like mercury
 	glBindTexture(GL_TEXTURE_2D, textures[1]);
 
 	// assign uniforms
@@ -847,23 +881,20 @@ void display() {
 	glUniformMatrix4fv(asteroid_view_mat_location, 1, GL_FALSE, view.m);
 
 	// draw the things
-	glDrawElementsInstanced(
-		GL_TRIANGLES,
-		asteroid_data.mPointCount,
-		GL_UNSIGNED_INT,
-		0,
-		NUM_ASTEROIDS);
+	glDrawElementsInstanced(GL_TRIANGLES, asteroid_data.mPointCount, GL_UNSIGNED_INT, 0, NUM_ASTEROIDS / 4);
 
-	// update matrices for next go around
-#pragma omp parallel for
-	for (int i = 0; i < NUM_ASTEROIDS; i++) {
-		asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], i * 0.001f);
-	}
+// The code below is for asteroids with faster / slower orbit periods, but it's a massive source of slowdown - NOTE: REQUIRES IDENTITY_MAT4 PASSED AS PARENT TO VS
+// update matrices for next go around
+//#pragma omp parallel for
+//	for (int i = 0; i < NUM_ASTEROIDS; i++) {
+//		asteroid_model_matrices[i] = rotate_y_deg(asteroid_model_matrices[i], i * 0.001f);
+//	}
+
 #pragma endregion
-
 #pragma region rings
 
-	init_rings();
+	// inherit saturn rotation for the ring orbits (NOTE CODE IN instance_vertex_shader.txt)
+	glUniformMatrix4fv(instance_parent_matrix_location, 1, GL_FALSE, planet_local[5].m);
 
 	// ASTEROID RENDERING FOR SATURN RINGS
 	for (int j = 0; j < 5; j++) {
@@ -884,12 +915,36 @@ void display() {
 			0,
 			NUM_RING_PARTS);
 	}
+
+#pragma endregion
+#pragma region kuiper belt
+	glUniformMatrix4fv(instance_parent_matrix_location, 1, GL_FALSE, sun_local.m);
+
+	// bind asteroid VAO
+	glBindVertexArray(asteroid_vao);
+
+	// bind & populate instance matrix buffer
+	glBindBuffer(GL_ARRAY_BUFFER, asteroid_buffers[INSTANCE_MAT_LOCATION]);
+	glBufferData(GL_ARRAY_BUFFER, NUM_ASTEROIDS * sizeof(mat4), &asteroid_model_matrices[1][0], GL_DYNAMIC_DRAW);
+
+	// white kuiper belt texture - they're icy comets
+	glBindTexture(GL_TEXTURE_2D, textures[15]);
+
+	// assign uniforms
+	glUniformMatrix4fv(asteroid_proj_mat_location, 1, GL_FALSE, persp_proj.m);
+	glUniformMatrix4fv(asteroid_view_mat_location, 1, GL_FALSE, view.m);
+
+	// draw the things
+	glDrawElementsInstanced(
+		GL_TRIANGLES,
+		asteroid_data.mPointCount,
+		GL_UNSIGNED_INT,
+		0,
+		NUM_ASTEROIDS);
+
 	// unbind the asteroid VAO
 	glBindVertexArray(0);
 #pragma endregion
-
-	glBindVertexArray(0);
-
 #pragma region skybox_render
 	// *******************************************************************************
 	// *******************************************************************************
@@ -911,7 +966,7 @@ void display() {
 	glUniformMatrix4fv(skybox_view_loc, 1, GL_FALSE, view.m);
 	
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxes[0]);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxes[skybox_in_use]);
 	glDrawArrays(GL_TRIANGLES, 0, 36);
 	glBindVertexArray(0);
 
@@ -920,10 +975,8 @@ void display() {
 	rotatez += 0.2f;
 	if (rotatez > 360.0f)
 		rotatez -= 360.0f;
-
 	glutSwapBuffers();
 }
-
 
 #pragma region textures
 void load_textures(unsigned char * data[], int width[], int height[]) {
@@ -983,40 +1036,122 @@ void load_skybox(unsigned char * data[], std::vector<char*> skybox_locs, int w[]
 }
 #pragma endregion
 
-// TODO: Nothing here, do something!
+#pragma region user_input
+
 void keypress(unsigned char key, int x, int y) {
 
 	switch (key)
 	{
 	case('w'): {
-
+		// also adding the 'y' to 'enable' flight - the scene is in space, being bounded at 'ground level' doesn't make sense
+		cam_pos += cam_to_target * 0.01;
+		target_pos += cam_to_target * 0.01;
 		break;
 	}
 	case('s'): {
-
+		cam_pos -= cam_to_target * 0.01;
+		target_pos -= cam_to_target * 0.01;
 		break;
 	}
 	case('a'): {
-
+		// not adding the 'y' here, just strafing 
+		GLfloat dx, dz;
+		dx = cam_to_target.v[2] * 0.01;
+		dz = -cam_to_target.v[0] * 0.01;
+		cam_pos.v[0] += dx;
+		cam_pos.v[2] += dz;
+		target_pos.v[0] += dx; 
+		target_pos.v[2] += dz;
 		break;
 	}
 	case('d'): {
-
+		GLfloat dx, dz;
+		dx = cam_to_target.v[2] * 0.01;
+		dz = -cam_to_target.v[0] * 0.01;
+		cam_pos.v[0] -= dx;
+		cam_pos.v[2] -= dz;
+		target_pos.v[0] -= dx;
+		target_pos.v[2] -= dz;
 		break;
 	}
 	case(' '): {
-		camera_y += 0.1f;
-		target_y += 0.1f;
+		cam_pos.v[1] += 0.1f;
+		target_pos.v[1] += 0.1f;
 
 		break;
 	}
 	case('x'): {
-		camera_y -= 0.1f;
-		target_y -= 0.1f;
+		cam_pos.v[1] -= 0.1f;
+		target_pos.v[1] -= 0.1f;
+		break;
+	}
+	case ('h'): {
+		skybox_in_use++;
+		
+		if (skybox_in_use == 5)
+			skybox_in_use = 0;
+
+		break;
+	}
+				// default included to stop the warning message
+	default: {
 		break;
 	}
 	}
 }
+
+void mouse_op(int button, int state, int x, int y)
+{
+	if (button == GLUT_LEFT_BUTTON)	// let the cursor be hidden and rooted to middle of window
+	{
+		no_warp = false;
+		glutSetCursor(GLUT_CURSOR_CROSSHAIR);
+	}
+	if (button == GLUT_RIGHT_BUTTON)	// cursor not hidden to show no longer rooted
+	{
+		no_warp = true;
+		glutSetCursor(GLUT_CURSOR_INHERIT);
+	}
+}
+
+void mouse_move(int x, int y) {
+
+	GLfloat dx, dz;
+	// don't let the mouse do things when 'clicked out'
+	if (no_warp == true)
+		return;
+
+	if (x < (width/2)) {
+		dx = cam_to_target.v[2] * 0.025;
+		dz = -cam_to_target.v[0] * 0.025;
+		
+		// mouse is for looking, change target only
+		target_pos.v[0] += dx;
+		target_pos.v[2] += dz;
+	}
+	else if (x > (width / 2)) {
+		dx = cam_to_target.v[2] * 0.025;
+		dz = -cam_to_target.v[0] * 0.025;
+
+		// mouse is for looking, change target only
+		target_pos.v[0] -= dx;
+		target_pos.v[2] -= dz;
+	}
+
+
+	if (y < (height / 2)) {
+		// mouse is for looking, change target only
+		target_pos.v[1] += mouse_dy;
+	}
+	else if (y > (height / 2)) {
+		// mouse is for looking, change target only
+		target_pos.v[1] -= mouse_dy;
+	}
+
+	glutWarpPointer(width / 2, height / 2);
+}
+
+#pragma endregion
 
 void updateScene() {
 
@@ -1048,8 +1183,8 @@ void initialise_planets() {
 		planets[i].name = planet_names[i];
 		planets[i].is_visible = true;
 	}
-}
 
+}
 
 void init()
 {
@@ -1087,26 +1222,41 @@ void init()
 	}
 #pragma endregion
 
-// TODO: GENERALISE THIS TO LOAD IN OTHER SKYBOXES O.T.F.
 #pragma region skybox_loading_init
 
-	int w[6], h[6], n_chan[6];
-	unsigned char * skybox_data[6];
+	int w[5][6], h[5][6], n_chan[5][6];
+	unsigned char * skybox_data[5][6];
 
 #pragma omp parallel for	
 	for (int i = 0; i < 6; i++) {
-		skybox_data[i] = stbi_load(blue_skybox_locations[i], &w[i], &h[i], &n_chan[i], 0);
+		skybox_data[0][i] = stbi_load(blue_skybox_locations[i], &w[0][i], &h[0][i], &n_chan[0][i], 0);
+		skybox_data[1][i] = stbi_load(lightblue_skybox_locations[i], &w[1][i], &h[1][i], &n_chan[1][i], 0);
+		skybox_data[2][i] = stbi_load(red_skybox_one_locations[i], &w[2][i], &h[2][i], &n_chan[2][i], 0);
+		skybox_data[3][i] = stbi_load(red_skybox_two_locations[i], &w[3][i], &h[3][i], &n_chan[3][i], 0);
+		skybox_data[4][i] = stbi_load(red_skybox_three_locations[i], &w[4][i], &h[4][i], &n_chan[4][i], 0);
 	}
-	load_skybox(skybox_data, blue_skybox_locations, w, h);
+
+	load_skybox(skybox_data[0], blue_skybox_locations, w[0], h[0]);
+	load_skybox(skybox_data[1], lightblue_skybox_locations, w[1], h[1]);
+	load_skybox(skybox_data[2], red_skybox_one_locations, w[2], h[2]);
+	load_skybox(skybox_data[3], red_skybox_two_locations, w[3], h[3]);
+	load_skybox(skybox_data[4], red_skybox_three_locations, w[4], h[4]);
 
 #pragma omp parallel for	
 	for (int i = 0; i < 6; i++) {
-		stbi_image_free(skybox_data[i]);
+		stbi_image_free(skybox_data[0][i]);
+		stbi_image_free(skybox_data[1][i]);
+		stbi_image_free(skybox_data[2][i]);
+		stbi_image_free(skybox_data[3][i]);
+		stbi_image_free(skybox_data[4][i]);
+
 	}
 #pragma	endregion
 
 	initialise_planets();
 	init_asteroid_matrices();
+	init_rings();
+
 }
 
 int main(int argc, char** argv) {
@@ -1114,15 +1264,22 @@ int main(int argc, char** argv) {
 	// Set up the window
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-	glutInitWindowSize(width, height);
-	glutCreateWindow("Hello Triangle");
+	width = glutGet(GLUT_SCREEN_WIDTH);
+	height = glutGet(GLUT_SCREEN_HEIGHT);
 
+	glutInitWindowSize(width, height);
+	//glutInitWindowPosition(width/2, height/2);
+	glutCreateWindow("Hello Triangle");
+	glutFullScreen();
+	glutWarpPointer(width / 2, height / 2);			// mouse initialisation - put cursor in middle of window and hide it
+	glutSetCursor(GLUT_CURSOR_CROSSHAIR);
 
 	// Tell glut where the display function is
 	glutDisplayFunc(display);
 	glutIdleFunc(updateScene);
 	glutKeyboardFunc(keypress);
-
+	glutMouseFunc(mouse_op);
+	glutPassiveMotionFunc(mouse_move);
 	// A call to glewInit() must be done after glut is initialized!
 	GLenum res = glewInit();
 	// Check for any errors
@@ -1136,4 +1293,3 @@ int main(int argc, char** argv) {
 	glutMainLoop();
 	return 0;
 }
-

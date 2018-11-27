@@ -64,6 +64,3 @@ void main(){
   gl_Position = proj * view * model * vec4(vertex_position,1.0);
   Texcoord = vertex_texture;
 }
-
-
-  

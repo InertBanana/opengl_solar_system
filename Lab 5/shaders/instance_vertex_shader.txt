@@ -10,6 +10,7 @@ out vec2 Texcoord;
 
 uniform mat4 view;
 uniform mat4 proj; 
+uniform mat4 parent;
 
 // you gave us the phong code so...
 
@@ -29,7 +30,9 @@ out vec4 fragment_colour; // final colour of surface
 
 void main()
 {
-	mat4 ModelViewMatrix = view * instance_matrix;
+  mat4 imat = parent * instance_matrix;
+
+	mat4 ModelViewMatrix = view * imat;
   	mat3 NormalMatrix =  mat3(ModelViewMatrix);
 
   // The diffuse shading equation, dot product gives us the cosine of angle between the vectors
@@ -61,7 +64,6 @@ void main()
   fragment_colour = vec4 ((Is + Id + Ia) * 0.5, 1.0);
   
   // Convert position to clip coordinates and pass along
-  gl_Position = proj * view * instance_matrix * vec4(pos,1.0);
+  gl_Position = proj * view * imat * vec4(pos,1.0);
   Texcoord = input_tex_coords;
 }
-

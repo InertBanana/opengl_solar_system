@@ -1,13 +1,26 @@
 ﻿  main.cpp
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(511): warning C4018: '<': signed/unsigned mismatch
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(644): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(674): warning C4244: 'initializing': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(678): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(685): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(689): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(696): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(700): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(707): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(711): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(735): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(191): warning C4305: 'initializing': truncation from 'double' to 'const float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(518): warning C4018: '<': signed/unsigned mismatch
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(654): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(686): warning C4244: 'initializing': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(690): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(697): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(701): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(708): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(712): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(719): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(723): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(749): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1047): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1048): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1052): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1053): warning C4305: 'argument': truncation from 'double' to 'float'
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1059): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1060): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1069): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1070): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1125): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1126): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1133): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
+c:\users\andrew\documents\cs4052\201819\lab 5\lab04\main.cpp(1134): warning C4244: '=': conversion from 'double' to 'GLfloat', possible loss of data
   Lab04.vcxproj -> C:\Users\andrew\Documents\CS4052\201819\Lab 5\\build\executables\Debug\Lab 04.exe
